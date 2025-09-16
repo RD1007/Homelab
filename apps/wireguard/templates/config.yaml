@@ -1,0 +1,39 @@
+{{- define "wg-config-template" -}}
+{{- $natSourceNetOption := .Values.wireguard.natAddSourceNet | ternary (printf "%s %s" "-s" .Values.wireguard.serverCidr) ("") -}}
+[Interface]
+Address = {{ .Values.wireguard.serverAddress }}
+ListenPort = 51820
+PostUp = wg set wg0 private-key /etc/wireguard/privatekey && iptables -t nat -A POSTROUTING {{ $natSourceNetOption }} -o eth0 -j MASQUERADE
+PostDown = iptables -t nat -D POSTROUTING -s {{ $natSourceNetOption }} -o eth0 -j MASQUERADE
+{{- range $key, $value := .Values.wireguard.interfaceOpts }}
+{{ $key }} = {{ $value }}
+{{- end }}
+# Clients
+{{- range .Values.wireguard.clients }}
+[Peer]
+{{- if .FriendlyName }}
+# friendly_name = {{ .FriendlyName }}
+{{- end }}
+{{- if .FriendlyJson }}
+# friendly_json = {{ .FriendlyJson | toJson }}
+{{- end }}
+PublicKey = {{ .PublicKey }}
+AllowedIPs = {{ .AllowedIPs }}
+{{- if .PresharedKey }}
+PresharedKey = {{ .PresharedKey }}
+{{- end }}
+{{- if .PersistentKeepalive }}
+PersistentKeepalive = {{ .PersistentKeepalive }}
+{{- end }}
+
+{{- end }}
+# End Clients
+{{- end -}}
+{{- if and (not .Values.configSecretName) (not .Values.disableConfigManagement) }}
+kind: Secret
+apiVersion: v1
+metadata:
+  name: "{{ .Release.Name }}-wg-config"
+data:
+  wg0.conf: {{ include "wg-config-template" . | b64enc }}
+{{- end }}
